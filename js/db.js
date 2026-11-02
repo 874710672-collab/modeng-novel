@@ -70,6 +70,8 @@
         }, meta),
         setup: setup || {},
         /* bible */
+        blueprint: { samples: [], text: '', at: 0 },  // 对标书样本 + 结构蓝图
+        ideas: [],            // 人工创意
         premise: '',          // 题材立意
         characters: [],       // [{name, role, desc, appear}]
         world: '',            // 世界观/设定
