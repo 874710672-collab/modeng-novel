@@ -112,6 +112,7 @@
     var s = DB.getSettings();
     var form = {
       title: '', genre: '都市异能', idea: '', protagonist: '', cheat: '', expect: '', avoid: '',
+      creatives: '', sample: '',
       targetChapters: 45, chapterWords: 2200
     };
     var wrap = el('div', { class: 'scroller' });
@@ -152,8 +153,27 @@
       '例：不要无敌流、不要后宫、不要一章解决一个大反派、不要写系统面板说明书。'));
     box.appendChild(c3);
 
+    var c35 = el('div', { class: 'card form-card' });
+    c35.appendChild(el('h3', {}, [el('span', { class: 'n', text: '4' }), '你的创意（可选，但很有用）']));
+    c35.appendChild(App.field('你想让这本书一定发生的事', 'textarea', '', function (v) { form.creatives = v; },
+      '例：第 30 章前后还清亲戚的 12 万，方式是当众比厨；中间要有「狗被城管抓走」的戏；结局前主角想放弃、狗反过来救他；不要开后宫'));
+    c35.appendChild(el('div', { class: 'muted', style: { marginBottom: '6px' } },
+      '这些会被当成「作者本人定的」，AI 不许改掉，只能围绕它展开。'));
+    box.appendChild(c35);
+
+    var c36 = el('div', { class: 'card form-card' });
+    c36.appendChild(el('h3', {}, [el('span', { class: 'n', text: '5' }), '对标书结构样本（可选）']));
+    c36.appendChild(el('div', { class: 'muted', style: { marginBottom: '10px', lineHeight: '1.9' } },
+      '把你的对标书的卷纲 / 章纲 / 节奏拆解贴进来，程序会提炼成结构蓝图，卷纲和章纲都按这个骨架写。' +
+      '现在只贴一份，建完项目后可以在右上「⧉ 对标」里继续加。'));
+    var sTa = el('textarea', { class: 'ta', style: { minHeight: '110px' } });
+    sTa.placeholder = '粘贴对标书的结构文档（贴不下没关系，建项目后再补）';
+    sTa.addEventListener('input', function () { form.sample = sTa.value; });
+    c36.appendChild(sTa);
+    box.appendChild(c36);
+
     var c4 = el('div', { class: 'card form-card' });
-    c4.appendChild(el('h3', {}, [el('span', { class: 'n', text: '4' }), '规模']));
+    c4.appendChild(el('h3', {}, [el('span', { class: 'n', text: '6' }), '规模']));
     var two = el('div', { class: 'two' });
     two.appendChild(App.field('总章数', 'input', '45', function (v) { form.targetChapters = Math.max(3, parseInt(v) || 45); }, '', 'number'));
     two.appendChild(App.field('单章字数', 'input', '2200', function (v) { form.chapterWords = Math.max(800, parseInt(v) || 2200); }, '', 'number'));
@@ -177,8 +197,12 @@
         chapterWords: form.chapterWords, status: 'writing'
       }, {
         idea: form.idea, protagonist: form.protagonist, cheat: form.cheat,
-        expect: form.expect, avoid: form.avoid, genre: form.genre
+        expect: form.expect, avoid: form.avoid, genre: form.genre, creatives: form.creatives
       });
+      if (form.sample.trim()) {
+        p.blueprint = { samples: [{ id: ML.uid('s'), name: '对标样本 1', text: form.sample.trim() }], text: '', at: 0 };
+        DB.saveProject(p);
+      }
       App.cur = p;
       App.go('work');
       ML.sleep(60).then(function () { App.startRun(p); });
@@ -218,6 +242,7 @@
     App.topbar([
       { text: '←', cls: 'tb-icon', title: '返回书架', onClick: function () { App.cur = null; App.go('home'); } },
       { text: '导出 ▾', onClick: function () { App.exportMenu(p); } },
+      { text: '⧉ 对标', cls: 'tb-btn', title: '对标书与结构蓝图', onClick: function () { App.go('refs'); } },
       { text: '⚙︎', cls: 'tb-icon', title: '项目设置', onClick: function () { App.projectSettings(p); } }
     ]);
 
@@ -225,7 +250,7 @@
     /* 子导航 */
     var sub = el('div', { class: 'ws-sub' });
     var tabs = [
-      ['read', '正文'], ['outline', '大纲与设定'], ['toc', '目录'], ['prompts', '提示词'], ['log', '日志']
+      ['read', '正文'], ['outline', '大纲与设定'], ['ideas', '创意'], ['toc', '目录'], ['prompts', '提示词'], ['log', '日志']
     ];
     tabs.forEach(function (t) {
       var running = E.running && t[0] === 'read';
@@ -481,6 +506,7 @@
     if (t === 'read') App.rvRead(pane);
     else if (t === 'outline') App.rvOutline(pane);
     else if (t === 'toc') App.rvToc(pane);
+    else if (t === 'ideas') App.rvIdeas(pane);
     else if (t === 'prompts') App.rvPrompts(pane);
     else if (t === 'log') App.rvLog(pane);
   };
@@ -552,7 +578,21 @@
       rd.appendChild(inner);
       inner.appendChild(el('p', { class: 'muted', html: '<span class="spin"></span> AI 正在写这一章…' }));
     } else {
-      rd.appendChild(el('div', { class: 'empty', html: '这一章还没有正文<br><span class="muted">本章章纲：</span><div class="muted" style="text-align:left;margin-top:14px;white-space:pre-wrap">' + ML.esc(c.outline || '（还没生成）') + '</div>' }));
+      var wrapEmpty = el('div', {});
+      wrapEmpty.appendChild(el('div', { class: 'empty', html: '这一章还没有正文<br><span class="muted">本章章纲：</span><div class="muted" style="text-align:left;margin-top:14px;white-space:pre-wrap">' + ML.esc(c.outline || '（还没生成）') + '</div>' }));
+      if (!c.outline) {
+        var makeOl = el('div', { style: { textAlign: 'center', marginTop: '10px' } });
+        var ob = el('button', { class: 'btn sm' }, '只排这一章的纲');
+        ob.addEventListener('click', async function () {
+          if (E.running) { ML.toast('自动运行中，等它跑到这章', true); return; }
+          ob.innerHTML = '<span class="spin"></span> 排纲中';
+          try { await E.outlineOne(p, no); App.renderRight(); ML.toast('章纲已生成'); }
+          catch (e) { ML.toast('失败：' + e.message, true); ob.textContent = '只排这一章的纲'; }
+        });
+        makeOl.appendChild(ob);
+        wrapEmpty.appendChild(makeOl);
+      }
+      rd.appendChild(wrapEmpty);
     }
     pane.appendChild(rd);
     App._readerEl = rd;
@@ -582,6 +622,42 @@
       b.appendChild(el('div', { class: 'bd', text: val || '（暂无）' }));
       return b;
     }
+    /* 结构蓝图 */
+    if (p.blueprint && p.blueprint.text) {
+      var bb = el('div', { class: 'blk' });
+      var bh = el('h4', {}, ['结构蓝图（来自对标书）']);
+      var be = el('button', { class: 'btn xs', style: { marginLeft: 'auto' }, text: '编辑' });
+      be.addEventListener('click', async function () {
+        var nv = await ML.prompt('编辑结构蓝图', '数字规则越具体，后面写得越像对标书', p.blueprint.text);
+        if (nv == null) return;
+        p.blueprint.text = nv; p.blueprint.at = ML.now(); DB.saveProject(p); App.renderRight();
+      });
+      var bm = el('button', { class: 'btn xs ghost', style: { marginLeft: '6px' }, text: '对标库' });
+      bm.addEventListener('click', function () { App.go('refs'); });
+      bh.appendChild(be); bh.appendChild(bm);
+      bb.appendChild(bh);
+      bb.appendChild(el('div', { class: 'bd', text: ML.clip(p.blueprint.text, 1200) }));
+      inner.appendChild(bb);
+    }
+    /* 重排结构：清空卷纲/章纲后从卷纲阶段重跑 */
+    var redoBar = el('div', { class: 'blk', style: { display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' } });
+    redoBar.appendChild(el('div', { class: 'bd', style: { flex: '1', minWidth: '200px', color: 'var(--tx3)' } },
+      '对卷纲/章纲不满意？调好「对标」与「创意」后点重排，会重新生成卷纲并把没写的章节纲作废重排。'));
+    var rb = el('button', { class: 'btn sm primary' }, '↻ 重排卷纲与章纲');
+    rb.addEventListener('click', async function () {
+      if (E.running) { ML.toast('先停止自动运行', true); return; }
+      var ok = await ML.confirm('重排结构', '会清空现有卷纲，并作废所有「还没写正文」的章纲（已写章节保留不动），然后从卷纲重新生成。', '重排');
+      if (!ok) return;
+      p.volumes = []; p.volumesText = '';
+      p.chapters.forEach(function (c) { if (!c.text) { c.outline = ''; c.title = ''; c.hook = ''; c.status = 'pending'; } });
+      p.chapters = p.chapters.filter(function (c) { return c.text || false; });
+      DB.saveProject(p);
+      ML.toast('开始重排…');
+      App.startRun(p, { resume: true });
+    });
+    redoBar.appendChild(rb);
+    inner.appendChild(redoBar);
+
     inner.appendChild(blk('立意', 'premise', p.premise));
     if (p.characters.length) {
       var cb = el('div', { class: 'blk' });
@@ -610,6 +686,40 @@
     }
     inner.appendChild(blk('当前状态文件', 'stateFile', p.stateFile));
     inner.appendChild(blk('全书梗概', 'summary', p.summary));
+    flow.appendChild(inner);
+    pane.appendChild(flow);
+  };
+
+  /* ================= 创意 ================= */
+  App.rvIdeas = function (pane) {
+    var p = App.cur;
+    var flow = el('div', { class: 'flow' });
+    var inner = el('div', { class: 'inner' });
+    var c = p.setup && p.setup.creatives ? p.setup.creatives.trim() : '';
+    var b1 = el('div', { class: 'blk' });
+    var h1 = el('h4', {}, ['全程创意']);
+    var e1 = el('button', { class: 'btn xs', style: { marginLeft: 'auto' }, text: '编辑' });
+    e1.addEventListener('click', function () { App.go('ideas'); });
+    h1.appendChild(e1);
+    b1.appendChild(h1);
+    b1.appendChild(el('div', { class: 'bd', text: c || '（还没写。点编辑，写你想让这本书一定发生的事：名场面、必须有的反转、讨厌的桥段）' }));
+    inner.appendChild(b1);
+
+    var b2 = el('div', { class: 'blk' });
+    var h2 = el('h4', {}, ['按章创意（' + (p.ideas || []).length + '）']);
+    var e2 = el('button', { class: 'btn xs', style: { marginLeft: 'auto' }, text: '管理' });
+    e2.addEventListener('click', function () { App.go('ideas'); });
+    h2.appendChild(e2);
+    b2.appendChild(h2);
+    var list = (p.ideas || []);
+    if (!list.length) b2.appendChild(el('div', { class: 'bd', text: '（没有。可以给某几章挂上你自己的想法，写那几章时自动带上）' }));
+    list.forEach(function (x) {
+      b2.appendChild(el('div', { class: 'bd', style: { marginBottom: '6px' } }, [
+        el('span', { class: 'pill ' + (x.at ? 'gold' : ''), style: { marginRight: '8px' }, text: x.at ? '第' + x.at + '章' : '全程' }),
+        x.text
+      ]));
+    });
+    inner.appendChild(b2);
     flow.appendChild(inner);
     pane.appendChild(flow);
   };
@@ -799,6 +909,7 @@
     var idea = el('textarea', { class: 'ta', style: { minHeight: '70px' } }); idea.value = p.setup.idea || '';
     var avoid = el('textarea', { class: 'ta', style: { minHeight: '60px' } }); avoid.value = p.setup.avoid || '';
     var extra = el('textarea', { class: 'ta', style: { minHeight: '70px' } }); extra.value = p.premiseExtra || '';
+    var creIn = el('textarea', { class: 'ta', style: { minHeight: '90px' } }); creIn.value = (p.setup && p.setup.creatives) || '';
     var body = el('div', {}, [
       el('div', { class: 'two' }, [
         el('div', { class: 'field' }, [el('label', { text: '书名' }), titleIn]),
@@ -809,6 +920,7 @@
         el('div', { class: 'field' }, [el('label', { text: '总章数' }), totIn])
       ]),
       el('div', { class: 'field' }, [el('label', { text: '一句话点子' }), idea]),
+      el('div', { class: 'field' }, [el('label', { text: '全程创意（作者定死的东西，AI 不许改）' }), creIn]),
       el('div', { class: 'field' }, [el('label', { text: '追加要求（会拼到立意后面，影响后续章纲）' }), extra]),
       el('div', { class: 'field' }, [el('label', { text: '禁止元素' }), avoid]),
       el('div', { class: 'divider' }),
@@ -839,6 +951,7 @@
             p.setup.idea = idea.value;
             p.setup.avoid = avoid.value;
             p.premiseExtra = extra.value;
+            p.setup.creatives = creIn.value;
             DB.saveProject(p);
             App.redrawWork();
             ML.toast('已保存');
