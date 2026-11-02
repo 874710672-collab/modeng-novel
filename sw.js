@@ -1,8 +1,8 @@
 /* sw.js —— 网络优先，失败回退缓存（避免改了文件不生效） */
-var CACHE = 'modn-v3';
+var CACHE = 'modn-v5';
 var ASSETS = [
   './', './index.html', './style.css', './js/core.js', './js/db.js', './js/api.js',
-  './js/prompts.js', './js/engine.js', './js/app.js', './manifest.json',
+  './js/prompts.js', './js/engine.js', './js/app.js', './js/app5.js', './manifest.json',
   './icon-180.png', './icon-192.png', './icon-512.png'
 ];
 
