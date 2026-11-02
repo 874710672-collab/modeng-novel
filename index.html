@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>墨灯 · 全自动长篇写作</title>
+<!-- 不要加 viewport-fit=cover：iOS 26/27 PWA 会叠加玻璃采样模糊 -->
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="theme-color" content="#08080b">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="墨灯">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="stylesheet" href="style.css?v=7">
+</head>
+<body>
+<div id="app">
+  <header class="topbar" id="topbar">
+    <div class="logo" id="logo">
+      <div class="mark">墨</div>
+      <div><b>墨灯</b><br><span>全自动长篇</span></div>
+    </div>
+    <div class="sp"></div>
+    <div id="tbr"></div>
+  </header>
+  <main id="view"></main>
+</div>
+<div id="modalRoot"></div>
+<div id="toast"></div>
+
+<script src="js/core.js?v=7"></script>
+<script src="js/db.js?v=7"></script>
+<script src="js/api.js?v=7"></script>
+<script src="js/prompts.js?v=7"></script>
+<script src="js/engine.js?v=7"></script>
+<script src="js/app.js?v=7"></script>
+</body>
+</html>
