@@ -42,7 +42,10 @@
       var vols = (p.volumes || []).map(function (v) {
         return '第' + v.no + '卷 ' + v.title + '（第' + v.fromCh + '-' + v.toCh + '章）主线：' + (v.summary || '');
       }).join('\n');
+      var bp = (p.blueprint && p.blueprint.text) ? p.blueprint.text : '（未提供对标书，按你自己认为最好的商业长篇结构来）';
       var all = Object.assign({
+        blueprint: bp,
+        ideas: E.ideasText(p, extra && extra.ch ? extra.ch : 0),
         title: m.title, genre: m.genre, idea: p.setup.idea || '', expect: p.setup.expect || '',
         avoid: p.setup.avoid || '', cheat: p.setup.cheat || '', protagonist: p.setup.protagonist || '',
         target: p.setup.targetChapters || m.targetChapters || 45,
@@ -57,6 +60,47 @@
         summary: p.summary || '（暂无）'
       }, extra || {});
       return all;
+    },
+
+    /* ---------- 人工创意 ---------- */
+    // 创意：{id, at: 章号(0=全程通用), text, done}
+    activeIdeas: function (p, no) {
+      return (p.ideas || []).filter(function (x) {
+        if (!x.text.trim()) return false;
+        if (!no) return true;
+        return !x.at || Math.abs(x.at - no) <= 2;   // 章号 ±2 内都算相关
+      });
+    },
+    ideasText: function (p, no) {
+      var list = E.activeIdeas(p, no || 0);
+      var extra = (p.setup && p.setup.creatives) ? p.setup.creatives.trim() : '';
+      if (!list.length && !extra) return '（无）';
+      var out = [];
+      if (extra) out.push('【全程创意】\n' + extra);
+      if (list.length) {
+        out.push('【按章创意】\n' + list.map(function (x) {
+          return '· ' + (x.at ? '[第' + x.at + '章] ' : '[全程] ') + x.text;
+        }).join('\n'));
+      }
+      return out.join('\n\n');
+    },
+
+    /* 提炼对标结构蓝图 */
+    async buildBlueprint(p) {
+      var samples = (p.blueprint && p.blueprint.samples || []).filter(function (s) { return s.text && s.text.trim(); });
+      if (!samples.length) return '';
+      E.log(p, '结构：正在从 ' + samples.length + ' 份对标书里提炼结构蓝图…');
+      var body = samples.map(function (s, i) {
+        return '===== 样本 ' + (i + 1) + '：' + (s.name || '未命名') + ' =====\n' + ML.clip(s.text.trim(), 9000);
+      }).join('\n\n');
+      var t = E.clean(await E.step(p, 'blueprint', { samples: body, count: samples.length }, { stream: true, phase: '对标提炼' }));
+      if (t.length < 100) throw new Error('结构提炼结果过短，检查样本内容');
+      p.blueprint = p.blueprint || {};
+      p.blueprint.text = t;
+      p.blueprint.at = ML.now();
+      DB.saveProject(p); E.emit('update');
+      E.log(p, '结构蓝图完成（' + t.length + ' 字）', 'ok');
+      return t;
     },
 
     /* 最近 n 章摘要 */
@@ -135,6 +179,9 @@
         p.stage = 'style'; DB.saveProject(p); E.emit('update'); E.log(p, '文风完成', 'ok');
       }
       else if (stage === 'volumes') {
+        if (!(p.blueprint && p.blueprint.text) && (p.blueprint && (p.blueprint.samples || []).length)) {
+          await E.buildBlueprint(p);
+        }
         E.log(p, '卷纲：正在拆分全书结构…');
         var tv = E.clean(await E.step(p, 'volumes', E.ctx(p), { stream: true, phase: '卷纲' }));
         p.volumes = E.parseVolumes(tv);
@@ -208,6 +255,25 @@
     },
 
     /* ---------- 章纲准备 ---------- */
+    /* 只排一章（用于手动补纲） */
+    outlineOne: async function (p, no) {
+      var v = E.volFor(p, no);
+      var vars = E.ctx(p, {
+        fromCh: no, toCh: no, batch: 1, n: no,
+        volTitle: v.title, volGoal: v.goal || v.summary || '',
+        recentSummaries: E.recentSummaries(p, no, 3),
+        lastEnding: E.lastEnding(p, no, 500), ch: no
+      });
+      var t = E.clean(await E.step(p, 'chapterOutline', vars, { stream: true, phase: '章纲 ' + no }));
+      var got = E.parseOutlines(t, no, no);
+      var c = DB.ensureChapter(p, no);
+      if (got[no]) { c.title = got[no].title; c.outline = got[no].outline; c.hook = got[no].hook; }
+      else { c.outline = t; }
+      c.status = c.text ? c.status : 'outlined';
+      DB.saveProject(p); E.emit('update');
+      return t;
+    },
+
     outletched: function (p, no) {
       var c = DB.getChapter(p, no);
       return c && c.outline;
@@ -238,6 +304,7 @@
         lastEnding: E.lastEnding(p, m0, 500)
       });
       var t = E.clean(await E.step(p, 'chapterOutline', vars, { stream: true, phase: '章纲 ' + m0 + '-' + m1 }));
+      if (t.length < 60) throw new Error('章纲输出过短');
       var got = E.parseOutlines(t, m0, m1);
       var cnt = 0;
       for (var i = m0; i <= m1; i++) {
