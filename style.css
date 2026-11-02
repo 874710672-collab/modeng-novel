@@ -362,7 +362,7 @@ h1,h2,h3,h4{margin:0;font-weight:600}
 }
 @media (max-width:700px){
   .ws-body{flex-direction:column}
-  .paneL{width:100%;flex:0 0 auto;height:auto;max-height:34%;border-right:0;border-bottom:1px solid var(--line);overflow:hidden}
+  .paneL{width:100%;flex:0 0 auto;height:34%;min-height:120px;max-height:34%;border-right:0;border-bottom:1px solid var(--line);overflow:hidden}
   .paneL .lscroll{overflow-y:auto}
   .paneR{flex:1 1 0;min-height:0}
   .scroller{padding:16px 14px 120px}
