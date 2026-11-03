@@ -1171,6 +1171,8 @@
     var t2 = el('div', { class: 'two' });
     t2.appendChild(App.field('失败重试次数', 'input', String(s.retries), function (v) { s.retries = Math.max(1, parseInt(v) || 3); }, '', 'number'));
     t2.appendChild(App.field('默认单章字数', 'input', String(s.chapterWords), function (v) { s.chapterWords = Math.max(600, parseInt(v) || 2200); }, '', 'number'));
+    t2.appendChild(App.field('上一章原文喂多少字（默认 500）', 'input', String(s.endingLen == null ? 500 : s.endingLen), function (v) { s.endingLen = Math.max(0, Math.min(3000, parseInt(v) || 0)); }, '0 = 不喂原文', 'number'));
+    t2.appendChild(App.field('最近几章摘要（默认 3）', 'input', String(s.summaryCount == null ? 3 : s.summaryCount), function (v) { s.summaryCount = Math.max(0, Math.min(10, parseInt(v) || 0)); }, '', 'number'));
     c2.appendChild(t2);
     var chk = el('label', { class: 'row', style: { cursor: 'pointer', padding: '6px 0' } });
     var cb = el('input', { type: 'checkbox' });
