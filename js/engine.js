@@ -288,7 +288,7 @@
         fromCh: no, toCh: no, batch: 1, n: no,
         volTitle: v.title, volGoal: v.goal || v.summary || '',
         recentSummaries: E.recentSummaries(p, no, 3),
-        lastEnding: E.lastEnding(p, no, 500), ch: no
+        lastEnding: E.lastEnding(p, no, E.endingLen() + 200), ch: no
       });
       var t = E.clean(await E.step(p, 'chapterOutline', vars, { stream: true, phase: '章纲 ' + no }));
       var got = E.parseOutlines(t, no, no);
@@ -405,7 +405,7 @@
       E.log(p, '第' + no + '章 质检中…');
       var vars = E.ctx(p, {
         outline: c.outline, text: c.text, chapterWords: p.meta.chapterWords,
-        lastEnding: E.lastEnding(p, no, 800),
+        lastEnding: E.lastEnding(p, no, Math.max(800, E.endingLen())),
         recentSummaries: E.recentSummaries(p, no, 2),
         ideas: E.ideasText(p, no)
       });
@@ -555,7 +555,7 @@
 
         /* 2. 逐章：每一章严格按 纲 → 文 → 检 → 改 → 忆 五步走完再进下一章 */
         var batch = 3;
-        for (var no = 1; no <= p.targetChapters; no++) {
+        for (var no = (opt.fromChapter || 1); no <= p.targetChapters; no++) {
           if (!opt.rewrite) {
             var ex = DB.getChapter(p, no);
             if (ex && ex.status === 'done' && ex.text) continue;
@@ -621,16 +621,74 @@
       E.emit('stopped');
     },
 
-    /* 单独重写某章 */
-    async rewriteChapter(p, no, hooks) {
-      var c = DB.getChapter(p, no);
-      if (!c || !c.outline) { await E.ensureOutlines(p, no, 1); }
-      await E.writeChapter(p, no, hooks);
-      if (DB.getSettings().autoReviewFix) {
-        try { await E.reviewChapter(p, no, hooks); } catch (e) {}
+    /* 单独重写某章：完整五步（纲 → 文 → 检 → 改 → 忆），与自动流程一致 */
+    async rewriteChapter(p, no, hooks, opt) {
+      opt = opt || {};
+      if (!E.running) {
+        E.running = true; E.paused = false; E.stopped = false;
+        E._signal = new AbortController().signal;
+        E.cur = { no: no };
+        E.emit('start');
       }
-      await E.memorize(p, no);
+      try {
+        var c = DB.getChapter(p, no);
+        if (!c || !c.outline || opt.redoOutline) {
+          E.emit('chapter', { no: no, phase: 'outline' });
+          await E.ensureOutlines(p, no, 1);
+        }
+        E.emit('chapter', { no: no, phase: 'write' });
+        await E.writeChapter(p, no, hooks);
+
+        E.emit('chapter', { no: no, phase: 'review' });
+        try { await E.reviewChapter(p, no, hooks); }
+        catch (e) { E.log(p, '质检出错（跳过）：' + e.message, 'warn'); }
+
+        E.emit('chapter', { no: no, phase: 'memory' });
+        await E.memorize(p, no);
+        DB.saveProject(p);
+        E.emit('chapterDone', { no: no });
+        E.log(p, '■ 第' + no + '章 重写完成（已质检并更新摘要/状态）', 'ok');
+      } catch (e) {
+        E.log(p, '✕ 重写失败：' + e.message, 'err');
+        throw e;
+      } finally {
+        E.running = false; E.cur = null;
+        DB.saveProject(p);
+        E.emit('end');
+      }
+    },
+
+    /* 从第 N 章起重写：之前章节不动，之后全部作废（正文/摘要/状态重建） */
+    async rewindFrom(p, no, hooks) {
+      var removed = 0;
+      p.chapters.forEach(function (c) {
+        if (c.no >= no) {
+          if (c.text) removed++;
+          c.text = ''; c.words = 0; c.summary = ''; c.review = ''; c.lint = [];
+          c.reviewPass = null; c.status = c.outline && c.no > no ? 'outlined' : 'pending';
+        }
+      });
+      p.chapters = p.chapters.filter(function (c) { return c.no < no; });
+      /* 状态文件回退：用第 N-1 章的摘要看不清全部，这里直接提示一次重建 */
+      p.history = p.history || [];
+      p.history.push({ at: ML.now(), no: no, state: p.stateFile, summary: p.summary });
       DB.saveProject(p);
+      E.log(p, '↺ 从第' + no + '章起重写，作废 ' + removed + ' 章正文', 'warn');
+      /* 用剩余章节的摘要重建状态文件 */
+      if (no > 1) {
+        try {
+          E.log(p, '正在用第 1-' + (no - 1) + ' 章的摘要重建状态文件…');
+          var sumAll = p.chapters.filter(function (c) { return c.summary; })
+            .sort(function (a, b) { return a.no - b.no; })
+            .slice(-6).map(function (c) { return '【第' + c.no + '章】' + ML.clip(c.summary, 400); }).join('\n\n');
+          var st = E.clean(await E.step(p, 'state', E.ctx(p, { mode: '模式B 按最新章更新（重写起点回退）', summary: sumAll }), { phase: '重建状态' }));
+          if (st.length > 80) { p.stateFile = st; E.log(p, '状态文件已回退到第' + (no - 1) + '章', 'ok'); }
+        } catch (e) { E.log(p, '状态文件回退失败（可手动改）：' + e.message, 'warn'); }
+      } else {
+        p.stateFile = '';
+      }
+      DB.saveProject(p);
+      return E.start(p, { fromChapter: no, hooks: hooks });
     },
 
     progress: function (p) {
