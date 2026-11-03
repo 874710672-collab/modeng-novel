@@ -396,11 +396,26 @@
     async reviewChapter(p, no, hooks) {
       var c = DB.getChapter(p, no);
       if (!c || !c.text) return;
+      /* 0. 先跑不花钱的程序自检：字数、AI 套话、超长段、重复句 */
+      var lint = E.lint(p, c);
+      if (lint.length) {
+        c.lint = lint;
+        E.log(p, '第' + no + '章 自检发现 ' + lint.length + ' 处硬伤（' + lint.map(function (x) { return x.type; }).slice(0, 3).join('、') + '）', 'warn');
+      } else { c.lint = []; }
       E.log(p, '第' + no + '章 质检中…');
-      var vars = E.ctx(p, { outline: c.outline, text: c.text, chapterWords: p.meta.chapterWords });
+      var vars = E.ctx(p, {
+        outline: c.outline, text: c.text, chapterWords: p.meta.chapterWords,
+        lastEnding: E.lastEnding(p, no, 800),
+        recentSummaries: E.recentSummaries(p, no, 2),
+        ideas: E.ideasText(p, no)
+      });
       var rev = E.clean(await E.step(p, 'review', vars, { stream: true, phase: '质检 ' + no }));
+      // 把程序自检结果并入报告，方便在质检弹窗里看到
+      if (lint.length) {
+        rev += '\n\n【程序自检】\n' + lint.map(function (x, i) { return (i + 1) + '. 【' + x.type + '】' + x.detail; }).join('\n');
+      }
       c.review = rev;
-      var pass = /【结论】\s*通过/.test(rev) && !/【结论】\s*需修改/.test(rev);
+      var pass = /【结论】\s*通过/.test(rev) && !/【结论】\s*需修改/.test(rev) && !lint.some(function (x) { return x.severe; });
       c.reviewPass = pass;
       DB.saveProject(p); E.emit('update');
       if (pass) { E.log(p, '第' + no + '章 质检通过', 'ok'); return; }
@@ -428,6 +443,50 @@
         E.log(p, '第' + no + '章 修改结果长度异常，已保留原稿', 'warn');
       }
       if (hooks && hooks.onChapterText) await hooks.onChapterText(c);
+    },
+
+    /* ---------- 程序自检（不调用模型，零成本） ---------- */
+    lint: function (p, c) {
+      var out = [];
+      var text = c.text || '';
+      var target = p.meta.chapterWords || 2200;
+      var w = c.words || ML.countWords(text);
+      if (w < target * 0.7) out.push({ type: '字数不足', detail: '本章 ' + w + ' 字，目标 ' + target + '，偏差超过 30%', severe: true });
+      if (w > target * 1.4) out.push({ type: '字数超出', detail: '本章 ' + w + ' 字，目标 ' + target, severe: false });
+
+      var banned = ['仿佛', '不由得', '嘴角勾起', '空气仿佛凝固', '与此同时', '众所周知', '值得一提的是',
+        '一丝不易察觉', '眼中闪过一丝', '心中暗想', '不由自主', '意味深长', '不置可否', '若有所思', '淡淡的', '缓缓地'];
+      var hits = {};
+      banned.forEach(function (b) {
+        var n = text.split(b).length - 1;
+        if (n >= 2) hits[b] = n;
+      });
+      var bk = Object.keys(hits);
+      if (bk.length) out.push({ type: 'AI 套话', detail: bk.map(function (k) { return k + '×' + hits[k]; }).join('、') + '（改用具体动作/对白）', severe: bk.length >= 3 });
+
+      // 超长段
+      var paras = text.split(/\n+/).filter(function (x) { return x.trim(); });
+      var longP = paras.filter(function (x) { return x.trim().length > 160; }).length;
+      if (longP) out.push({ type: '段落过长', detail: '有 ' + longP + ' 段超过 160 字（规范：每段不超过 4 行）', severe: false });
+
+      // 句子重复（连续 12 字以上出现两次）
+      var flat = text.replace(/\s+/g, '');
+      var seen = {};
+      for (var i = 0; i + 14 <= flat.length; i += 7) {
+        var g = flat.substr(i, 14);
+        seen[g] = (seen[g] || 0) + 1;
+      }
+      var dups = Object.keys(seen).filter(function (g) { return seen[g] > 1 && !/[，。！？…」』]/.test(g); });
+      if (dups.length) out.push({ type: '重复语句', detail: dups.slice(0, 3).map(function (g) { return '「' + g + '…」重复'; }).join('；'), severe: dups.length >= 3 });
+
+      // 未落实的创意
+      var ideas = E.activeIdeas(p, c.no);
+      var miss = ideas.filter(function (x) {
+        var key = x.text.replace(/[，。、；：！？\s]/g, '').slice(0, 6);
+        return key && flat.indexOf(key) < 0 && x.at === c.no;
+      });
+      if (miss.length) out.push({ type: '创意未落实', detail: miss.map(function (x) { return ML.clip(x.text, 18); }).join('；'), severe: false });
+      return out;
     },
 
     /* ---------- 记忆 ---------- */
