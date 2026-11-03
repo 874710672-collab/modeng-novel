@@ -550,7 +550,8 @@
       c.status === 'writing' ? el('span', { class: 'pill grn', text: '写作中' }) : null,
       c.status === 'done' ? el('span', { class: 'pill grn', text: '完成' }) : null,
       c.status === 'fixed' ? el('span', { class: 'pill gold', text: '已改稿' }) : null,
-      c.reviewPass === false ? el('span', { class: 'pill red', text: '质检有问题' }) : null
+      c.reviewPass === false ? el('span', { class: 'pill red', text: '质检有问题' }) : null,
+      (c.lint && c.lint.length) ? el('span', { class: 'pill', style: { cursor: 'pointer' }, text: '自检 ' + c.lint.length + ' 处' }) : null
     ]);
     head.appendChild(ttl);
     var meta = el('div', { class: 'meta' });
@@ -591,6 +592,16 @@
     bCp.addEventListener('click', function () {
       navigator.clipboard.writeText(c.text || '').then(function () { ML.toast('已复制'); });
     });
+    var badge = head.querySelector('.ct .pill:not(.grn):not(.gold):not(.red)');
+    if (badge && c.lint && c.lint.length) {
+      badge.addEventListener('click', function () {
+        ML.modal({
+          size: 'md', title: '第' + no + '章 · 程序自检', body: el('div', { class: 'bd', style: { whiteSpace: 'pre-wrap', lineHeight: '1.9' } },
+            c.lint.map(function (x, i) { return (i + 1) + '. 【' + x.type + '】' + x.detail; }).join('\n')),
+          buttons: [{ text: '关闭', cls: 'primary' }]
+        });
+      });
+    }
     var bRev = el('button', { class: 'btn xs', text: '质检' });
     bRev.addEventListener('click', function () { App.showReview(c); });
     tools.appendChild(bEdit); tools.appendChild(bRe); tools.appendChild(bRev); tools.appendChild(bCp);
