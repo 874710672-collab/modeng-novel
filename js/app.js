@@ -560,6 +560,19 @@
     if (c.title) meta.appendChild(el('span', { text: '更新 ' + ML.fmtRel(c.updatedAt) }));
     head.appendChild(meta);
 
+    /* 本章依据 */
+    var basis = E.why(p, no);
+    var bb = el('div', { style: { marginTop: '8px', fontSize: '11.5px', color: 'var(--tx3)', lineHeight: '1.7', display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' } });
+    bb.appendChild(el('span', { text: '依据：' }));
+    basis.forEach(function (b) {
+      var p2 = el('span', { class: 'pill ' + (b.on ? '' : ''), style: { height: '21px', fontSize: '11px', opacity: b.on ? '1' : '.45' }, text: b.label });
+      bb.appendChild(p2);
+    });
+    var whyBtn = el('button', { class: 'btn xs ghost', text: '看它到底喂了什么' });
+    whyBtn.addEventListener('click', function () { App.showPromptFor(p, no); });
+    bb.appendChild(whyBtn);
+    head.appendChild(bb);
+
     var tools = el('div', { class: 'tools' });
     var bEdit = el('button', { class: 'btn xs', text: '✎ 编辑' });
     bEdit.addEventListener('click', function () { App.editChapter(p, no); });
@@ -744,6 +757,25 @@
     inner.appendChild(blk('全书梗概', 'summary', p.summary));
     flow.appendChild(inner);
     pane.appendChild(flow);
+  };
+
+  /* 本章到底用了哪些上下文 */
+  App.showPromptFor = function (p, no) {
+    var c = DB.getChapter(p, no);
+    var vars = E.ctx(p, {
+      ch: no, outline: (c && c.outline) || '', chapterWords: p.meta.chapterWords,
+      recentSummaries: E.recentSummaries(p, no, 3), lastEnding: E.lastEnding(p, no, 600)
+    });
+    var pr = ML.Prompts.get(c && c.outline ? 'chapter' : 'chapterOutline', p);
+    var body = el('div', {}, [
+      el('div', { class: 'muted', style: { marginBottom: '10px' } },
+        (c && c.outline ? '这是第' + no + '章正文实际发送给模型的完整提示词（system + user 已填好）。' : '这一章还没纲，这里显示的是「章纲」提示词。')),
+      el('div', { class: 'field' }, [el('label', { text: 'SYSTEM' }),
+        el('div', { class: 'bd', style: { whiteSpace: 'pre-wrap', fontSize: '12px', background: 'var(--bg2)', padding: '10px', borderRadius: '8px', border: '1px solid var(--line)' }, text: ML.Prompts.fill(pr.system, vars) })]),
+      el('div', { class: 'field' }, [el('label', { text: 'USER' }),
+        el('div', { class: 'bd', style: { whiteSpace: 'pre-wrap', fontSize: '12px', background: 'var(--bg2)', padding: '10px', borderRadius: '8px', border: '1px solid var(--line)', maxHeight: '46vh', overflow: 'auto' }, text: ML.Prompts.fill(pr.user, vars) })])
+    ]);
+    ML.modal({ size: 'md', title: '第' + no + '章 · 模型收到的原文', body: body, buttons: [{ text: '关闭', cls: 'primary' }] });
   };
 
   /* 查看卷纲全文 */
