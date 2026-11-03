@@ -131,6 +131,15 @@
       }).join('\n\n');
     },
 
+    /* 上一章原文切片长度：默认 500 字（可在设置里改 0-3000） */
+    endingLen: function () {
+      var v = DB.getSettings().endingLen;
+      return v == null ? 500 : Math.max(0, Number(v) || 0);
+    },
+    summaryCount: function () {
+      var v = DB.getSettings().summaryCount;
+      return v == null ? 3 : Math.max(0, Number(v) || 0);
+    },
     lastEnding: function (p, beforeNo, len) {
       var prev = DB.getChapter(p, beforeNo - 1);
       if (!prev || !prev.text) return '（暂无，本章是开篇）';
@@ -351,8 +360,8 @@
       var c = DB.ensureChapter(p, no);
       var vars = E.ctx(p, {
         ch: no, outline: c.outline, chapterWords: p.meta.chapterWords || s.chapterWords,
-        recentSummaries: E.recentSummaries(p, no, 3),
-        lastEnding: E.lastEnding(p, no, 600)
+        recentSummaries: E.recentSummaries(p, no, DB.getSettings().summaryCount || 3),
+        lastEnding: E.lastEnding(p, no, E.endingLen())
       });
 
       c.status = 'writing'; c.updatedAt = ML.now();
