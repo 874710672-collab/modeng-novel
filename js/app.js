@@ -577,16 +577,10 @@
     var tools = el('div', { class: 'tools' });
     var bEdit = el('button', { class: 'btn xs', text: '✎ 编辑' });
     bEdit.addEventListener('click', function () { App.editChapter(p, no); });
-    var bRe = el('button', { class: 'btn xs', text: '↻ 重写本章' });
-    bRe.addEventListener('click', async function () {
-      if (E.running) { ML.toast('正在自动运行时不能单独重写', true); return; }
-      var ok = await ML.confirm('重写第' + no + '章', '会覆盖当前正文，并按新内容更新摘要与状态文件。继续？', '重写');
-      if (!ok) return;
-      App.renderRight();
-      ML.toast('开始重写第' + no + '章…');
-      await E.rewriteChapter(p, no, { onChapterText: function () { App.renderRight(); } });
-      App.renderRight(); App.renderLeft();
-      ML.toast('第' + no + '章 重写完成');
+    var bRe = el('button', { class: 'btn xs', text: '↻ 重写 ▾' });
+    bRe.addEventListener('click', function () {
+      if (E.running) { ML.toast('正在自动运行时不能重写，先暂停或停止', true); return; }
+      App.rewriteMenu(p, no);
     });
     var bCp = el('button', { class: 'btn xs', text: '复制' });
     bCp.addEventListener('click', function () {
@@ -768,6 +762,48 @@
     inner.appendChild(blk('全书梗概', 'summary', p.summary));
     flow.appendChild(inner);
     pane.appendChild(flow);
+  };
+
+  /* 重写菜单：单章 / 从这章起重写 */
+  App.rewriteMenu = function (p, no) {
+    var body = el('div', {});
+    function item(title, desc, danger, onClick) {
+      var it = el('div', { style: { padding: '14px 8px', borderBottom: '1px solid var(--line)', cursor: 'pointer' } }, [
+        el('div', { style: { fontSize: '14px', color: danger ? 'var(--red)' : 'var(--tx)' }, text: title }),
+        el('div', { class: 'muted', style: { marginTop: '4px', lineHeight: '1.7' }, text: desc })
+      ]);
+      it.addEventListener('click', function () { m.close(); onClick(); });
+      return it;
+    }
+    body.appendChild(item('↻ 重写这一章（推荐）', '按现有章纲重写正文，然后自动质检、定点改稿、更新摘要与状态文件。前后章节不动。', false, function () {
+      App.runRewrite(p, no, { redoOutline: false });
+    }));
+    body.appendChild(item('⟲ 重排章纲后重写这一章', '先按最新的状态文件和上一章结尾重新排这一章的纲，再写正文、再质检。', false, function () {
+      App.runRewrite(p, no, { redoOutline: true });
+    }));
+    body.appendChild(item('↺ 从第' + no + '章起重写（作废之后全部章节）', '第 ' + no + ' 章及之后的所有正文会被清空重写，状态文件会回退到第 ' + (no - 1) + ' 章并自动重建。之前的章节不动。', true, async function () {
+      var ok = await ML.confirm('从第' + no + '章起重写', '第 ' + no + ' 章之后的正文、摘要会被全部清空（共 ' + p.chapters.filter(function (c) { return c.no >= no && c.text; }).length + ' 章），并从第 ' + no + ' 章开始一路重写到结尾。此操作不可撤销，建议先导出备份。', '开始重写');
+      if (!ok) return;
+      App.wnav = 'read';
+      App.viewChapterNo = no;
+      App.renderRight();
+      E.rewindFrom(p, no, { onChapterText: function (c) { if (App.viewChapterNo === c.no) App.renderRight(); } })
+        .catch(function (e) { ML.toast('失败：' + e.message, true); })
+        .then(function () { if (App.route === 'work') { App.renderLeft(); App.renderRight(); } });
+    }));
+    var m = ML.modal({ size: 'sm', title: '第' + no + '章 · 重写', body: body });
+  };
+
+  App.runRewrite = async function (p, no, opt) {
+    App.renderRight();
+    ML.toast('开始重写第' + no + '章…');
+    try {
+      await E.rewriteChapter(p, no, { onChapterText: function () { App.renderRight(); } }, opt || {});
+      ML.toast('第' + no + '章 重写完成，已质检');
+    } catch (e) {
+      ML.toast('重写失败：' + e.message, true);
+    }
+    App.renderRight(); App.renderLeft();
   };
 
   /* 本章到底用了哪些上下文 */
