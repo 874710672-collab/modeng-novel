@@ -62,6 +62,23 @@
       return all;
     },
 
+    /* 某一章的写作依据清单（给界面展示） */
+    why: function (p, no) {
+      var c = DB.getChapter(p, no);
+      var v = E.volFor(p, no);
+      var recent = (p.chapters || []).filter(function (x) { return x.no < no && x.summary; }).slice(-3);
+      return [
+        { label: '结构蓝图', on: !!(p.blueprint && p.blueprint.text) },
+        { label: '立意/人物/世界观/文风', on: !!(p.premise && p.characters.length) },
+        { label: '卷纲·' + (v ? v.title : '无'), on: !!p.volumes.length },
+        { label: '状态文件', on: !!(p.stateFile && p.stateFile.length > 40) },
+        { label: '最近摘要 ' + recent.length + ' 章', on: recent.length > 0 },
+        { label: '上一章结尾', on: no > 1 && !!DB.getChapter(p, no - 1) },
+        { label: '本章章纲', on: !!(c && c.outline) },
+        { label: '创意 ' + E.activeIdeas(p, no).length + ' 条', on: E.activeIdeas(p, no).length > 0 }
+      ];
+    },
+
     /* ---------- 人工创意 ---------- */
     // 创意：{id, at: 章号(0=全程通用), text, done}
     activeIdeas: function (p, no) {
@@ -303,7 +320,15 @@
         recentSummaries: E.recentSummaries(p, m0, 3),
         lastEnding: E.lastEnding(p, m0, 500)
       });
-      var t = E.clean(await E.step(p, 'chapterOutline', vars, { stream: true, phase: '章纲 ' + m0 + '-' + m1 }));
+      E.emit('call', { promptKey: 'chapterOutline', phase: 'chapterOutline ' + m0 });
+      var t = E.clean(await ML.API.chatRetry({
+        system: P.fill(P.get('chapterOutline', p).system, vars),
+        user: P.fill(P.get('chapterOutline', p).user, vars),
+        stream: true,
+        onDelta: function (piece, full) { E.emit('delta', { type: 'outline', text: full, from: m0, to: m1 }); },
+        onRetry: function (n, msg) { E.log(p, '  重试 ' + n + '：' + ML.clip(msg, 50), 'warn'); },
+        signal: E._signal
+      }).then(function (r) { return r.text; }));
       if (t.length < 60) throw new Error('章纲输出过短');
       var got = E.parseOutlines(t, m0, m1);
       var cnt = 0;
@@ -317,7 +342,7 @@
       }
       if (!cnt) throw new Error('章纲解析失败（AI 没按格式输出，见原文）');
       DB.saveProject(p); E.emit('update');
-      E.log(p, '章纲就绪 ' + cnt + ' 章', 'ok');
+      E.log(p, '章纲就绪 ' + cnt + ' 章（依据：卷纲 + 最近摘要 + 状态文件 + 上一章结尾 + 创意）', 'ok');
     },
 
     /* ---------- 写一章 ---------- */
