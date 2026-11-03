@@ -690,22 +690,138 @@
     }
     inner.appendChild(blk('世界观', 'world', p.world));
     inner.appendChild(blk('文风基线', 'styleGuide', p.styleGuide));
+    /* 卷纲 */
+    var vb = el('div', { class: 'blk' });
+    var vh = el('h4', {}, ['卷纲（' + (p.volumes || []).length + ' 卷）']);
     if (p.volumes.length) {
-      var vb = el('div', { class: 'blk' });
-      vb.appendChild(el('h4', {}, ['卷纲（' + p.volumes.length + ' 卷）']));
-      p.volumes.forEach(function (v) {
-        vb.appendChild(el('div', { class: 'bd', style: { marginBottom: '8px' } }, [
-          el('b', { text: '第' + v.no + '卷 ' + v.title }),
-          el('span', { class: 'muted', text: '  第' + v.fromCh + '-' + v.toCh + '章' }),
-          el('div', { text: ML.clip(v.summary, 260) })
-        ]));
+      var ve = el('button', { class: 'btn xs', style: { marginLeft: 'auto' }, text: '全文' });
+      ve.addEventListener('click', function () { App.showVolumes(p); });
+      var vc = el('button', { class: 'btn xs ghost', style: { marginLeft: '6px' }, text: '复制' });
+      vc.addEventListener('click', function () {
+        navigator.clipboard.writeText(p.volumesText || p.volumes.map(function (v) { return '第' + v.no + '卷 ' + v.title + '\n' + v.summary; }).join('\n\n'))
+          .then(function () { ML.toast('已复制卷纲'); });
       });
-      inner.appendChild(vb);
+      vh.appendChild(ve); vh.appendChild(vc);
     }
+    vb.appendChild(vh);
+    if (!p.volumes.length) {
+      vb.appendChild(el('div', { class: 'bd', text: '（还没生成。点上方「↻ 重排卷纲与章纲」或开始写作后会自动生成）' }));
+    }
+    p.volumes.forEach(function (v, i) {
+      var row = el('div', { style: { padding: '8px 0', borderBottom: i < p.volumes.length - 1 ? '1px solid var(--line)' : 'none', cursor: 'pointer' } });
+      row.appendChild(el('div', {}, [
+        el('b', { text: '第' + v.no + '卷 ' + v.title }),
+        el('span', { class: 'muted', text: '  第' + v.fromCh + '-' + v.toCh + '章' })
+      ]));
+      row.appendChild(el('div', { class: 'bd', style: { fontSize: '12.5px', color: 'var(--tx3)' }, text: ML.clip((v.summary || '').replace(/\s+/g, ' '), 150) }));
+      row.addEventListener('click', function () { App.showVolumes(p, i); });
+      vb.appendChild(row);
+    });
+    inner.appendChild(vb);
+
+    /* 章纲 */
+    var ob = el('div', { class: 'blk' });
+    var oh = el('h4', {}, ['章纲（' + (p.chapters || []).filter(function (c) { return c.outline; }).length + ' 章已排）']);
+    var obtn = el('button', { class: 'btn xs', style: { marginLeft: 'auto' }, text: '全部章纲' });
+    obtn.addEventListener('click', function () { App.showOutlines(p); });
+    oh.appendChild(obtn);
+    ob.appendChild(oh);
+    var listed = (p.chapters || []).filter(function (c) { return c.outline; }).slice(-8).reverse();
+    if (!listed.length) {
+      ob.appendChild(el('div', { class: 'bd', text: '（还没排。正文页可点「只排这一章的纲」，或开始写作后自动排）' }));
+    }
+    listed.forEach(function (c) {
+      var r = el('div', { style: { padding: '7px 0', borderBottom: '1px solid var(--line)', cursor: 'pointer' } }, [
+        el('span', { class: 'muted', style: { marginRight: '8px' }, text: '第' + c.no + '章' }),
+        el('span', { text: c.title || '' }),
+        el('span', { class: 'pill ' + (c.text ? 'grn' : ''), style: { marginLeft: '8px', fontSize: '10.5px' }, text: c.text ? '已写' : '待写' })
+      ]);
+      r.addEventListener('click', function () { App.showOutline(p, c.no); });
+      ob.appendChild(r);
+    });
+    inner.appendChild(ob);
     inner.appendChild(blk('当前状态文件', 'stateFile', p.stateFile));
     inner.appendChild(blk('全书梗概', 'summary', p.summary));
     flow.appendChild(inner);
     pane.appendChild(flow);
+  };
+
+  /* 查看卷纲全文 */
+  App.showVolumes = function (p, idx) {
+    var text = p.volumesText || p.volumes.map(function (v) { return '### 第' + v.no + '卷 ' + v.title + '\n' + v.summary; }).join('\n\n');
+    var body = el('div', { class: 'bd', style: { whiteSpace: 'pre-wrap', lineHeight: '1.85' }, text: text });
+    var m = ML.modal({
+      title: '全书卷纲', size: 'md', body: body,
+      buttons: [
+        { text: '复制', onClick: function () { navigator.clipboard.writeText(text).then(function () { ML.toast('已复制'); }); return false; } },
+        {
+          text: '编辑', onClick: function () {
+            var ta = el('textarea', { class: 'ta', style: { minHeight: '58vh', lineHeight: '1.8' } });
+            ta.value = text;
+            var m2 = ML.modal({
+              title: '编辑卷纲原文', size: 'md', body: ta,
+              buttons: [
+                { text: '取消' },
+                {
+                  text: '保存并按此重排章纲', cls: 'primary', onClick: function () {
+                    p.volumesText = ta.value;
+                    var parsed = E.parseVolumes(ta.value);
+                    if (parsed.length) p.volumes = parsed;
+                    DB.saveProject(p); App.renderRight(); ML.toast('卷纲已保存');
+                  }
+                }
+              ]
+            });
+          }
+        },
+        { text: '关闭', cls: 'primary' }
+      ]
+    });
+    return m;
+  };
+
+  /* 查看某一章的章纲 */
+  App.showOutline = function (p, no) {
+    var c = DB.getChapter(p, no);
+    if (!c) return;
+    var ta = el('textarea', { class: 'ta', style: { minHeight: '46vh', lineHeight: '1.8' } });
+    ta.value = c.outline || '';
+    ML.modal({
+      title: '第' + no + '章 章纲' + (c.title ? ' · ' + c.title : ''), size: 'md', body: ta,
+      buttons: [
+        {
+          text: '只重排这一章', onClick: async function () {
+            try { await E.outlineOne(p, no); App.renderRight(); ML.toast('已重排'); }
+            catch (e) { ML.toast('失败：' + e.message, true); }
+            return false;
+          }
+        },
+        {
+          text: '保存', cls: 'primary', onClick: function () {
+            c.outline = ta.value;
+            var t = (ta.value.match(/^#*\s*第\s*\d+\s*章\s*(.*)$/m) || [])[1];
+            if (t) c.title = t.trim();
+            DB.saveProject(p); App.renderRight(); ML.toast('已保存');
+          }
+        }
+      ]
+    });
+  };
+
+  /* 全部章纲一屏看完 */
+  App.showOutlines = function (p) {
+    var list = (p.chapters || []).filter(function (c) { return c.outline; }).sort(function (a, b) { return a.no - b.no; });
+    var text = list.map(function (c) {
+      return '## 第' + c.no + '章 ' + (c.title || '') + (c.text ? '（已写 ' + (c.words || 0) + ' 字）' : '（待写）') + '\n' + c.outline;
+    }).join('\n\n');
+    ML.modal({
+      title: '全部章纲（' + list.length + ' 章）', size: 'md',
+      body: el('div', { class: 'bd', style: { whiteSpace: 'pre-wrap', lineHeight: '1.8', fontSize: '13px' }, text: text || '（还没有章纲）' }),
+      buttons: [
+        { text: '复制', onClick: function () { navigator.clipboard.writeText(text).then(function () { ML.toast('已复制'); }); return false; } },
+        { text: '关闭', cls: 'primary' }
+      ]
+    });
   };
 
   /* ================= 创意 ================= */
@@ -758,6 +874,11 @@
         el('span', { class: 'st ' + (c && c.text ? 'done' : c && c.outline ? 'draft' : c && c.status === 'writing' ? 'draft' : '') + (c && c.reviewPass === false ? ' bad' : ''),
           text: c && c.text ? (c.words + ' 字') : c && c.outline ? '有纲' : '' })
       ]);
+      if (c && c.outline) {
+        var gb = el('button', { class: 'btn xs ghost', style: { marginLeft: '6px', flex: '0 0 auto' }, text: '纲' });
+        gb.addEventListener('click', function (e) { e.stopPropagation(); App.showOutline(p, c.no); });
+        item.appendChild(gb);
+      }
       (function (no) {
         item.addEventListener('click', function () { App.viewChapterNo = no; App.wnav = 'read'; App.redrawWork(); });
       })(n);
