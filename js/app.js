@@ -111,7 +111,7 @@
     App.topbar([{ text: '← 返回', onClick: function () { App.go('home'); } }]);
     var s = DB.getSettings();
     var form = {
-      title: '', genre: '都市异能', idea: '', protagonist: '', cheat: '', expect: '', avoid: '',
+      title: '', genre: '', idea: '', protagonist: '', cheat: '', expect: '', avoid: '',
       creatives: '', sample: '',
       targetChapters: 45, chapterWords: 2200
     };
@@ -121,18 +121,36 @@
     var c1 = el('div', { class: 'card form-card' });
     c1.appendChild(el('h3', {}, [el('span', { class: 'n', text: '1' }), '基本信息']));
     c1.appendChild(App.field('书名（可留空，AI 会起）', 'input', '', function (v) { form.title = v; }, '例：《我家狗是厨神》'));
-    var gchips = ['都市异能', '玄幻升级', '历史架空', '科幻末世', '悬疑推理', '西幻', '仙侠', '电竞竞技', '娱乐圈', '无限流'];
+    var gchips = ['都市高武', '都市异能', '都市生活', '玄幻升级', '仙侠修真', '历史架空', '科幻末世',
+      '悬疑推理', '西幻', '无限流', '网游竞技', '娱乐圈', '种田经营', '规则怪谈', '克苏鲁', '职场商战'];
     var gWrap = el('div', { class: 'chips' });
+    var gIn = el('input', { class: 'inp', placeholder: '或者自己填：如「都市高武 · 美食」「民国探案 · 轻喜剧」', value: form.genre });
+    gIn.addEventListener('input', function () {
+      form.genre = gIn.value.trim();
+      ML.$$('.chip', gWrap).forEach(function (x) { x.classList.toggle('on', x.textContent === form.genre); });
+    });
     gchips.forEach(function (g) {
       var b = el('button', { class: 'chip' + (g === form.genre ? ' on' : ''), text: g });
       b.addEventListener('click', function () {
+        if (form.genre === g) {          // 再点一次取消
+          form.genre = ''; b.classList.remove('on'); gIn.value = '';
+          return;
+        }
         form.genre = g;
+        gIn.value = g;
         ML.$$('.chip', gWrap).forEach(function (x) { x.classList.remove('on'); });
         b.classList.add('on');
       });
       gWrap.appendChild(b);
     });
-    c1.appendChild(el('div', { class: 'field' }, [el('label', { text: '类型' }), gWrap]));
+    var gField = el('div', { class: 'field' });
+    gField.appendChild(el('label', {}, ['类型']));
+    gField.appendChild(gWrap);
+    gField.appendChild(gIn);
+    gField.appendChild(el('div', { class: 'seed-tip', style: { marginTop: '0' } },
+      '点选常用类型，或者直接在框里自己写（可以组合，如「都市高武 + 美食日常」）。'));
+    c1.appendChild(gField);
+
     c1.appendChild(App.field('一句话点子（越具体越好）', 'textarea', '', function (v) { form.idea = v; },
       '例：夜市烤鸡腿的摊主捡到一只会说人话的哈士奇，狗身上带着厨神系统，把做菜技能转给他，代价是替他完成系统任务。'));
     box.appendChild(c1);
@@ -913,7 +931,7 @@
     var body = el('div', {}, [
       el('div', { class: 'two' }, [
         el('div', { class: 'field' }, [el('label', { text: '书名' }), titleIn]),
-        el('div', { class: 'field' }, [el('label', { text: '类型' }), genreIn])
+        el('div', { class: 'field' }, [el('label', { text: '类型（可自由填写）' }), genreIn])
       ]),
       el('div', { class: 'two' }, [
         el('div', { class: 'field' }, [el('label', { text: '单章字数' }), chapIn]),
